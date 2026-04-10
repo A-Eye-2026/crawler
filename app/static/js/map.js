@@ -221,6 +221,14 @@ function renderMessageList() {
 
     container.innerHTML = "";
 
+    if (!disasterMessageData.length) {
+        container.innerHTML = `
+            <div class="empty-state">
+                표시할 화재/산불 관련 재난문자가 아직 없습니다.
+            </div>
+        `;
+    }
+
     disasterMessageData.forEach((item) => {
         const regionName = safeText(item.region_name || item.region);
         const sender = safeText(item.sender);
@@ -262,6 +270,14 @@ function renderTopRiskList() {
         const bScore = Number(b.risk_score) || 0;
         return bScore - aScore;
     });
+
+    if (!sorted.length) {
+        container.innerHTML = `
+            <div class="empty-state">
+                표시할 산불 위험도 데이터가 아직 없습니다.
+            </div>
+        `;
+    }
 
     sorted.slice(0, 5).forEach((item) => {
         const regionName = safeText(item.region_name || item.region);
@@ -369,53 +385,141 @@ function bindLayerToggleEvents() {
 
 /*
 |--------------------------------------------------------------------------
-| 테스트용 샘플 데이터
-|--------------------------------------------------------------------------
-| 아직 Flask API 연결 전이면 이 데이터로 화면 먼저 확인 가능
+| 화면 상태 메시지 업데이트
 |--------------------------------------------------------------------------
 */
-function loadSampleData() {
-    wildfireRiskData = [
-        {
-            id: 1,
-            region_name: "강원특별자치도 강릉시",
-            risk_level: "매우 높음",
-            risk_score: 82.5,
-            forecast_time: "2026-04-10 09:00:00",
-            lat: 37.7519,
-            lng: 128.8761
-        },
-        {
-            id: 2,
-            region_name: "경상북도 안동시",
-            risk_level: "높음",
-            risk_score: 74.2,
-            forecast_time: "2026-04-10 09:00:00",
-            lat: 36.5684,
-            lng: 128.7294
-        },
-        {
-            id: 3,
-            region_name: "서울특별시 종로구",
-            risk_level: "보통",
-            risk_score: 45.8,
-            forecast_time: "2026-04-10 09:00:00",
-            lat: 37.5735,
-            lng: 126.9788
-        }
-    ];
+function updateDataStatus(message) {
+    const statusElement = document.getElementById("dataStatusText");
 
-    disasterMessageData = [
-        {
-            id: 1,
-            region_name: "강원특별자치도 강릉시",
-            sender: "행정안전부",
-            sent_at: "2026-04-10 08:30:00",
-            message_text: "[산불] 강릉시 산불 확산 우려 지역 주민은 안전한 장소로 대피 바랍니다.",
-            lat: 37.7519,
-            lng: 128.8761
+    if (!statusElement) {
+        return;
+    }
+
+    statusElement.textContent = message;
+}
+
+/*
+|--------------------------------------------------------------------------
+| 데이터가 전부 비었을 때 기본 상세 문구 복구
+|--------------------------------------------------------------------------
+*/
+function resetRegionDetailIfEmpty() {
+    const box = document.getElementById("regionDetailBox");
+    const selectedRegionName = document.getElementById("selectedRegionName");
+
+    if (!wildfireRiskData.length && !disasterMessageData.length) {
+        if (selectedRegionName) {
+            selectedRegionName.textContent = "없음";
         }
-    ];
+
+        if (box) {
+            box.textContent = "실데이터가 아직 없거나 불러오지 못했습니다.";
+        }
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| API 응답을 프런트 렌더링 형식으로 정규화
+|--------------------------------------------------------------------------
+*/
+function normalizeRiskItem(item) {
+    return {
+        id: item.id,
+        region_id: item.region_id,
+        region_name: item.region_name,
+        risk_level: item.risk_level,
+        risk_score: Number(item.risk_score) || 0,
+        forecast_time: item.forecast_time,
+        source: item.source,
+        lat: typeof item.lat === "number" ? item.lat : null,
+        lng: typeof item.lng === "number" ? item.lng : null
+    };
+}
+
+function normalizeMessageItem(item) {
+    return {
+        id: item.id,
+        external_message_id: item.external_message_id,
+        region_id: item.region_id,
+        region_name: item.region_name,
+        sender: item.sender,
+        message_text: item.message_text,
+        message_type: item.message_type,
+        keyword_tag: item.keyword_tag,
+        sent_at: item.sent_at,
+        source: item.source,
+        // 좌표가 없는 문자는 리스트만 실데이터로 보여주고 지도 마커는 건너뛴다.
+        lat: typeof item.lat === "number" ? item.lat : null,
+        lng: typeof item.lng === "number" ? item.lng : null
+    };
+}
+
+/*
+|--------------------------------------------------------------------------
+| 실데이터 로딩
+|--------------------------------------------------------------------------
+*/
+async function fetchJson(url) {
+    const response = await fetch(url, {
+        headers: {
+            "Accept": "application/json"
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`${url} 요청 실패: ${response.status}`);
+    }
+
+    return response.json();
+}
+
+async function loadLiveData() {
+    updateDataStatus("실데이터를 불러오는 중입니다.");
+
+    try {
+        // 위험도/재난문자 API를 병렬로 불러와 초기 렌더링 시간을 줄인다.
+        const [riskItems, messageItems] = await Promise.all([
+            fetchJson("/api/risk/latest"),
+            fetchJson("/api/messages/latest")
+        ]);
+
+        wildfireRiskData = Array.isArray(riskItems)
+            ? riskItems.map(normalizeRiskItem)
+            : [];
+        disasterMessageData = Array.isArray(messageItems)
+            ? messageItems.map(normalizeMessageItem)
+            : [];
+
+        renderAll();
+
+        if (!wildfireRiskData.length && !disasterMessageData.length) {
+            updateDataStatus("실데이터가 아직 없습니다.");
+            return;
+        }
+
+        updateDataStatus("실데이터가 반영되었습니다.");
+    } catch (error) {
+        console.error("실데이터 로딩 실패", error);
+
+        wildfireRiskData = [];
+        disasterMessageData = [];
+        renderAll();
+        updateDataStatus("실데이터 로딩 실패");
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| 모든 렌더링 함수 실행
+|--------------------------------------------------------------------------
+*/
+function renderAll() {
+    renderRiskLayer();
+    renderMessageLayer();
+    renderMessageList();
+    renderTopRiskList();
+    resetRegionDetailIfEmpty();
 }
 
 /*
@@ -425,10 +529,6 @@ function loadSampleData() {
 */
 document.addEventListener("DOMContentLoaded", function () {
     initMap();
-    loadSampleData();
-    renderRiskLayer();
-    renderMessageLayer();
-    renderMessageList();
-    renderTopRiskList();
     bindLayerToggleEvents();
+    loadLiveData();
 });

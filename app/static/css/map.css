@@ -39,6 +39,12 @@
     font-size: 0.9rem;
 }
 
+.data-status-text {
+    margin: 8px 0 0;
+    color: var(--text-sub);
+    font-size: 0.86rem;
+}
+
 .toolbar-btn {
     height: 40px;
     padding: 0 14px;
@@ -141,6 +147,15 @@
 .top-risk-meta {
     color: var(--text-sub);
     font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.empty-state {
+    padding: 12px;
+    border-radius: 14px;
+    background: var(--bg-panel-2);
+    border: 1px dashed var(--border-color);
+    color: var(--text-sub);
     line-height: 1.5;
 }
 

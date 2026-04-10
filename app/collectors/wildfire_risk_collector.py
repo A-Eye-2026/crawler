@@ -16,10 +16,11 @@ app/collectors/wildfire_risk_collector.py
 """
 
 from datetime import datetime
+from xml.etree import ElementTree as ET
 
 import requests
 
-from app.config import WILDFIRE_API_KEY, REQUEST_TIMEOUT
+from app.config import WILDFIRE_API_KEY, WILDFIRE_API_URL, REQUEST_TIMEOUT
 from app.db.session import SessionLocal
 from app.db.models.region import Region
 from app.db.models.wildfire_risk import WildfireRisk
@@ -35,20 +36,41 @@ class WildfireRiskCollector:
         """
         수집기에 필요한 기본 설정값 초기화
         """
-        self.api_key = WILDFIRE_API_KEY
-        self.timeout = REQUEST_TIMEOUT
-
-        """
-        실제 API 주소는 나중에 공공데이터포털 문서 기준으로 교체
-        지금은 예시 placeholder다.
-        """
-        self.base_url = "https://example-wildfire-api-url"
+        self.api_key = WILDFIRE_API_KEY  # 요청 파라미터에 포함할 인증 키
+        self.timeout = REQUEST_TIMEOUT  # 외부 API 지연 시 빠르게 실패하게 하는 제한 시간
+        self.base_url = WILDFIRE_API_URL.strip()  # .env에 넣은 실제 산불위험예보 API 주소
 
         """
         수집 작업 이름
         collector_job_log에 어떤 작업인지 기록할 때 사용
         """
         self.job_name = "wildfire_risk_collector"
+
+    def validate_settings(self):
+        """
+        실행 전에 필수 설정을 확인해서 설정 오류를 명확히 드러낸다.
+        """
+        if not self.api_key:
+            raise ValueError("WILDFIRE_API_KEY가 비어 있습니다. .env 값을 확인하세요.")
+
+        # 예시 URL이 남아 있으면 DNS 에러 대신 설정 에러로 바로 알려준다.
+        if not self.base_url or "example-" in self.base_url:
+            raise ValueError(
+                "WILDFIRE_API_URL이 비어 있거나 예시 URL입니다. "
+                ".env에 실제 산불위험예보 API 주소를 넣어주세요."
+            )
+
+    def classify_risk_level(self, risk_score):
+        """
+        수치형 위험 점수를 화면용 등급 문자열로 바꾼다.
+        """
+        if risk_score >= 66:
+            return "높음"
+
+        if risk_score >= 33:
+            return "보통"
+
+        return "낮음"
 
     def create_job_log(self, session):
         """
@@ -158,23 +180,24 @@ class WildfireRiskCollector:
         }
 
         try:
+            self.validate_settings()  # 네트워크 호출 전에 필수 설정부터 검증한다.
+
             response = requests.get(
                 self.base_url,
                 params=params,
-                timeout=self.timeout
+                timeout=self.timeout,
             )
 
             print(f"[INFO] 응답 상태코드: {response.status_code}")
 
             response.raise_for_status()
 
-            data = response.json()
+            root = ET.fromstring(response.text)  # 현재 API는 type=json 요청에도 XML을 반환한다.
+            items = []
 
-            """
-            실제 API 구조에 따라 나중에 수정
-            예: data["response"]["body"]["items"]["item"]
-            """
-            items = data.get("items", [])
+            for item_elem in root.findall(".//item"):
+                item = {child.tag: (child.text or "").strip() for child in item_elem}
+                items.append(item)
 
             print(f"[DONE] 산불위험예보 원본 데이터 수신 완료: {len(items)}건")
 
@@ -201,17 +224,13 @@ class WildfireRiskCollector:
             파싱 실패 시 None
         """
         try:
-            """
-            아래 필드명은 실제 API 문서에 맞게 수정 필요
-            지금은 예시 필드명이다.
-            """
-            region_name = item.get("region_name", "").strip()
-            risk_score_raw = item.get("risk_score", 0)
-            risk_level = item.get("risk_level", "").strip()
-            forecast_time_raw = item.get("forecast_time", "")
+            region_name = item.get("doname", "").strip()  # 응답 예시 기준 지역명은 doname에 들어온다.
+            risk_score_raw = item.get("std", 0)  # std 값을 대표 위험 점수로 사용한다.
+            forecast_time_raw = item.get("analdate", "")
 
             risk_score = float(risk_score_raw)
-            forecast_time = datetime.strptime(forecast_time_raw, "%Y-%m-%d %H:%M:%S")
+            risk_level = self.classify_risk_level(risk_score)  # 화면 표시는 점수 기반 간단 등급으로 보강한다.
+            forecast_time = datetime.strptime(forecast_time_raw, "%Y-%m-%d %H")
 
             return {
                 "region_name": region_name,

@@ -102,6 +102,22 @@ class CollectorJobLog(Base):
     error_message = Column(Text, nullable=True)
 
     """
+    skip_reason_summary:
+    - skip 사유별 집계 결과를 JSON 문자열로 저장
+    - 예: {"non_keyword": 31, "duplicate": 19}
+    - non_keyword는 정책상 정상 제외라는 점을 운영 화면에서 바로 확인하기 위함
+    """
+    skip_reason_summary = Column(Text, nullable=True)
+
+    """
+    skip_reason_summary:
+    - skip 사유별 집계 결과를 JSON 문자열로 저장
+    - 예: {"non_keyword": 31, "duplicate": 19}
+    - non_keyword는 정책상 정상 제외라는 점을 운영 화면에서 바로 확인하기 위함
+    """
+    skip_reason_summary = Column(Text, nullable=True)
+
+    """
     started_at:
     - 수집 작업 시작 시각
     """

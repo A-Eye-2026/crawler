@@ -12,6 +12,8 @@ DB 초기화 파일
 - python -m app.db.init_db
 """
 
+from sqlalchemy import inspect, text
+
 from app.db.base import Base
 from app.db.session import engine
 
@@ -34,8 +36,34 @@ def init_db():
     print("[START] DB 테이블 생성을 시작합니다.")
 
     Base.metadata.create_all(bind=engine)
+    ensure_schema_updates()
 
     print("[DONE] DB 테이블 생성이 완료되었습니다.")
+
+
+def ensure_schema_updates():
+    """
+    기존 SQLite 파일에도 필요한 신규 컬럼을 안전하게 추가한다.
+    """
+    inspector = inspect(engine)
+
+    if "collector_job_log" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column_info["name"]
+        for column_info in inspector.get_columns("collector_job_log")
+    }
+
+    if "skip_reason_summary" not in existing_columns:
+        with engine.begin() as connection:
+            # skip_reason 집계를 운영 화면에서 조회할 수 있도록 JSON 텍스트 컬럼을 추가한다.
+            connection.execute(
+                text(
+                    "ALTER TABLE collector_job_log "
+                    "ADD COLUMN skip_reason_summary TEXT"
+                )
+            )
 
 
 if __name__ == "__main__":
