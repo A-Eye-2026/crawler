@@ -1,12 +1,14 @@
 const map = L.map('map').setView([36.4, 127.8], 7);
 const summaryCard = document.getElementById('summary-card');
 const refreshButton = document.getElementById('refresh-button');
+const searchInput = document.getElementById('search-input');
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 
 let markersLayer = L.layerGroup().addTo(map);
+let allRestAreas = [];
 
 function getMarkerColor(item) {
   if (!item.total_parking_spaces) return '#6b7280';
@@ -43,13 +45,17 @@ function renderSummary(item) {
   `;
 }
 
-async function loadParkingStatus() {
-  const response = await fetch('/api/v1/parking-status');
-  const data = await response.json();
-
+function displayMarkers(items) {
   markersLayer.clearLayers();
+  
+  if (items.length === 0) return;
 
-  data.items.forEach((item) => {
+  const bounds = L.latLngBounds();
+
+  items.forEach((item) => {
+    // 위경도가 0,0이거나 잘못된 경우 건너뜀
+    if (item.lat === 0 || item.lng === 0) return;
+
     const color = getMarkerColor(item);
     const marker = L.marker([item.lat, item.lng], {
       icon: createMarkerIcon(color)
@@ -63,8 +69,44 @@ async function loadParkingStatus() {
 
     marker.on('click', () => renderSummary(item));
     marker.addTo(markersLayer);
+    bounds.extend([item.lat, item.lng]);
   });
+
+  // 모든 마커가 보이도록 지도 범위 조정 (전국 보기)
+  if (!bounds.isValid()) {
+    map.setView([36.4, 127.8], 7);
+  } else if (items.length === 1) {
+    map.setView([items[0].lat, items[0].lng], 13);
+    renderSummary(items[0]);
+  } else {
+    map.fitBounds(bounds, { padding: [50, 50] });
+  }
 }
 
+async function loadParkingStatus() {
+  console.log('API 호출 시도...');
+  const response = await fetch('/api/v1/parking-status');
+  const data = await response.json();
+  console.log(`서버로부터 ${data.items.length}개의 데이터를 받았습니다.`);
+  allRestAreas = data.items;
+  displayMarkers(allRestAreas);
+}
+
+function handleSearch(e) {
+  const query = e.target.value.toLowerCase().trim();
+  if (!query) {
+    displayMarkers(allRestAreas);
+    return;
+  }
+
+  const filtered = allRestAreas.filter(item => 
+    item.name.toLowerCase().includes(query) || 
+    item.route_name.toLowerCase().includes(query)
+  );
+  
+  displayMarkers(filtered);
+}
+
+searchInput.addEventListener('input', handleSearch);
 refreshButton.addEventListener('click', loadParkingStatus);
 loadParkingStatus();

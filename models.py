@@ -66,6 +66,12 @@ class Database:
             conn.executescript(ddl)
 
     def upsert_rest_areas(self, rows: Iterable[Dict]) -> None:
+        """데이터를 DB에 삽입하거나 이미 존재하면 업데이트한다."""
+        row_list = list(rows)
+        if not row_list:
+            print("[DB] 저장할 데이터가 0건입니다.")
+            return
+
         sql = """
         INSERT INTO rest_areas (
             external_id, name, route_name, lat, lng,
@@ -92,8 +98,13 @@ class Database:
             last_synced_at = excluded.last_synced_at,
             updated_at = CURRENT_TIMESTAMP;
         """
-        with self.connection() as conn:
-            conn.executemany(sql, list(rows))
+        try:
+            with self.connection() as conn:
+                conn.executemany(sql, row_list)
+                print(f"[DB] {len(row_list)}건의 데이터가 성공적으로 저장/업데이트되었습니다.")
+        except Exception as e:
+            print(f"[DB] 저장 중 오류 발생: {e}")
+            raise
 
     def get_rest_areas(self) -> List[Dict]:
         query = """
@@ -117,6 +128,18 @@ class Database:
         """
         with self.connection() as conn:
             rows = conn.execute(query).fetchall()
+        return [dict(row) for row in rows]
+
+    def search_rest_areas(self, query_text: str) -> List[Dict]:
+        """이름 또는 노선명으로 휴게소를 검색한다."""
+        sql = """
+        SELECT * FROM rest_areas
+        WHERE name LIKE ? OR route_name LIKE ?
+        ORDER BY name ASC
+        """
+        search_term = f"%{query_text}%"
+        with self.connection() as conn:
+            rows = conn.execute(sql, (search_term, search_term)).fetchall()
         return [dict(row) for row in rows]
 
     def get_last_sync_time(self) -> Optional[str]:
