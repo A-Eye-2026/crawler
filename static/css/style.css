@@ -1,0 +1,132 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  color: #1f2937;
+  background: #f3f4f6;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.app-header h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.app-header p {
+  margin: 0;
+  color: #6b7280;
+}
+
+#refresh-button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  background: #111827;
+  color: white;
+  cursor: pointer;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  padding: 16px;
+  height: calc(100vh - 92px);
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  min-height: 560px;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+
+.sidebar {
+  background: white;
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.06);
+}
+
+.summary-card {
+  margin-top: 12px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+}
+
+.summary-card dl {
+  margin: 0;
+}
+
+.summary-card dt {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.summary-card dd {
+  margin: 4px 0 12px;
+  font-weight: 700;
+}
+
+.legend {
+  margin-top: 24px;
+}
+
+.legend ul {
+  padding: 0;
+  margin: 12px 0 0;
+  list-style: none;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.green { background: #16a34a; }
+.orange { background: #f59e0b; }
+.red { background: #dc2626; }
+
+.custom-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid white;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  #map {
+    min-height: 420px;
+  }
+}

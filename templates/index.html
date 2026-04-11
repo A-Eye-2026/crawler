@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>고속도로 휴게소 실시간 주차 현황</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>고속도로 휴게소 실시간 주차 현황</h1>
+      <p>혼잡도에 따라 마커 색상이 달라집니다. 마커를 클릭하면 상세 정보를 볼 수 있습니다.</p>
+    </div>
+    <button id="refresh-button" type="button">새로고침</button>
+  </header>
+
+  <main class="layout">
+    <section id="map"></section>
+    <aside class="sidebar">
+      <h2>상세 정보</h2>
+      <div id="summary-card" class="summary-card">
+        <p>지도에서 휴게소를 선택해 주세요.</p>
+      </div>
+      <div class="legend">
+        <h3>혼잡도 범례</h3>
+        <ul>
+          <li><span class="dot green"></span> 여유</li>
+          <li><span class="dot orange"></span> 보통</li>
+          <li><span class="dot red"></span> 혼잡</li>
+        </ul>
+      </div>
+    </aside>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
