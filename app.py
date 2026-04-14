@@ -2,7 +2,12 @@ import os
 
 from flask import Flask, jsonify, render_template, request
 
-from api_handler import LivingWeatherAPIClient, REQUEST_CODE_LABELS
+from api_handler import (
+    LivingWeatherAPIClient,
+    REQUEST_CODE_LABELS,
+    EXTRA_INDEX_LABELS,
+    ALL_REQUEST_CODES,
+)
 from config import Config
 from models import Database
 
@@ -20,14 +25,14 @@ api_client = LivingWeatherAPIClient(
 DEFAULT_REQUEST_CODE = "A42"
 
 
-# ── 데이터 동기화 ────────────────────────────────────────────────────────────
+# ── 동기화 ────────────────────────────────────────────────────────────────────
 
 def _sync(request_code: str) -> None:
     try:
         rows = api_client.fetch_and_normalize(request_code)
         if rows:
             db.upsert_weather_indices(rows)
-            print(f"[*] {request_code}({REQUEST_CODE_LABELS[request_code]}): {len(rows)}개 지역 동기화 완료")
+            print(f"[*] {request_code}({ALL_REQUEST_CODES.get(request_code, '?')}): {len(rows)}개 지역 동기화 완료")
         else:
             print(f"[!] {request_code}: 수신 데이터 0건")
     except Exception as exc:
@@ -35,14 +40,14 @@ def _sync(request_code: str) -> None:
 
 
 def _sync_all() -> None:
-    """모든 requestCode 일괄 동기화 (스케줄러 전용)."""
+    """모든 코드 일괄 동기화 (스케줄러 전용)."""
     print("[스케줄러] 자동 동기화 시작")
-    for code in REQUEST_CODE_LABELS:
+    for code in ALL_REQUEST_CODES:
         _sync(code)
     print("[스케줄러] 자동 동기화 완료")
 
 
-# ── 앱 초기화 ────────────────────────────────────────────────────────────────
+# ── 초기화 ────────────────────────────────────────────────────────────────────
 
 def bootstrap() -> None:
     db.init_db()
@@ -53,7 +58,7 @@ def bootstrap() -> None:
     _sync(DEFAULT_REQUEST_CODE)
 
 
-# ── 스케줄러 (3시간 주기 자동 동기화) ───────────────────────────────────────
+# ── 스케줄러 ──────────────────────────────────────────────────────────────────
 
 def _start_scheduler():
     try:
@@ -68,17 +73,21 @@ def _start_scheduler():
         return None
 
 
-# ── 라우트 ───────────────────────────────────────────────────────────────────
+# ── 라우트 ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
-    return render_template("index.html", request_codes=REQUEST_CODE_LABELS)
+    return render_template(
+        "index.html",
+        sensation_codes=REQUEST_CODE_LABELS,
+        extra_codes=EXTRA_INDEX_LABELS,
+    )
 
 
 @app.route("/api/v1/weather-index")
 def weather_index():
     code = request.args.get("requestCode", DEFAULT_REQUEST_CODE)
-    if code not in REQUEST_CODE_LABELS:
+    if code not in ALL_REQUEST_CODES:
         return jsonify({"error": "유효하지 않은 requestCode"}), 400
 
     rows = db.get_weather_indices(code)
@@ -87,27 +96,27 @@ def weather_index():
         rows = db.get_weather_indices(code)
 
     return jsonify({
-        "request_code": code,
-        "label": REQUEST_CODE_LABELS[code],
-        "count": len(rows),
+        "request_code":  code,
+        "label":         ALL_REQUEST_CODES[code],
+        "count":         len(rows),
         "last_synced_at": db.get_last_sync_time(code),
-        "items": rows,
+        "items":         rows,
     })
 
 
 @app.route("/api/v1/sync")
 def sync():
     code = request.args.get("requestCode", DEFAULT_REQUEST_CODE)
-    if code not in REQUEST_CODE_LABELS:
+    if code not in ALL_REQUEST_CODES:
         return jsonify({"error": "유효하지 않은 requestCode"}), 400
     _sync(code)
     rows = db.get_weather_indices(code)
     return jsonify({
-        "request_code": code,
-        "label": REQUEST_CODE_LABELS[code],
-        "count": len(rows),
+        "request_code":  code,
+        "label":         ALL_REQUEST_CODES[code],
+        "count":         len(rows),
         "last_synced_at": db.get_last_sync_time(code),
-        "items": rows,
+        "items":         rows,
     })
 
 
@@ -116,11 +125,10 @@ def health():
     return jsonify({"status": "ok"})
 
 
-# ── 진입점 ───────────────────────────────────────────────────────────────────
+# ── 진입점 ────────────────────────────────────────────────────────────────────
 
 bootstrap()
 
-# Flask 개발 서버 reloader 환경에서 스케줄러 중복 실행 방지
 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     _start_scheduler()
 

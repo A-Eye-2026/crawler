@@ -9,7 +9,9 @@
       "Bash(.venv/Scripts/python.exe -c \"import sys; print\\(sys.prefix\\)\")",
       "Bash(.venv/Scripts/python.exe -m pip install APScheduler==3.10.4 -q)",
       "Bash(.venv/Scripts/python.exe -c \"import apscheduler; print\\('OK:', apscheduler.__version__\\)\")",
-      "Bash(.venv/Scripts/python.exe -c \"import app\")"
+      "Bash(.venv/Scripts/python.exe -c \"import app\")",
+      "Bash(ls C:/Users/thinkodia/Desktop/git/crawler/.env*)",
+      "Bash(.venv/Scripts/python.exe -c ':*)"
     ]
   }
 }
