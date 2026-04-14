@@ -1,92 +1,114 @@
+import os
+
 from flask import Flask, jsonify, render_template, request
 
-from api_handler import RestAreaAPIClient
+from api_handler import LivingWeatherAPIClient, REQUEST_CODE_LABELS
 from config import Config
 from models import Database
-
 
 config = Config()
 app = Flask(__name__)
 app.config["SECRET_KEY"] = config.SECRET_KEY
 
-# 모듈 경계를 분리해두면 추후 의존성 주입 형태로 교체하기 쉽다.
 db = Database(config.DATABASE_URL)
-api_client = RestAreaAPIClient(
-    base_url=config.EX_API_BASE_URL,
-    api_key=config.EX_API_KEY,
+api_client = LivingWeatherAPIClient(
+    base_url=config.WEATHER_API_BASE_URL,
+    api_key=config.WEATHER_API_KEY,
     timeout_seconds=config.API_TIMEOUT_SECONDS,
 )
 
+DEFAULT_REQUEST_CODE = "A42"
+
+
+# ── 데이터 동기화 ────────────────────────────────────────────────────────────
+
+def _sync(request_code: str) -> None:
+    try:
+        rows = api_client.fetch_and_normalize(request_code)
+        if rows:
+            db.upsert_weather_indices(rows)
+            print(f"[*] {request_code}({REQUEST_CODE_LABELS[request_code]}): {len(rows)}개 지역 동기화 완료")
+        else:
+            print(f"[!] {request_code}: 수신 데이터 0건")
+    except Exception as exc:
+        app.logger.warning("동기화 실패 [%s]: %s", request_code, exc)
+
+
+def _sync_all() -> None:
+    """모든 requestCode 일괄 동기화 (스케줄러 전용)."""
+    print("[스케줄러] 자동 동기화 시작")
+    for code in REQUEST_CODE_LABELS:
+        _sync(code)
+    print("[스케줄러] 자동 동기화 완료")
+
+
+# ── 앱 초기화 ────────────────────────────────────────────────────────────────
 
 def bootstrap() -> None:
-    """앱 시작 시 필요한 초기화를 수행한다."""
     db.init_db()
-    
-    # [주의] 기존 데이터를 삭제하고 다시 받습니다 (테스트용)
-    with db.connection() as conn:
-        conn.execute("DELETE FROM rest_areas")
-    
-    if config.EX_API_KEY:
-        print(f"[*] API 동기화 시작 (Key: {config.EX_API_KEY[:4]}***)")
-        seed_or_refresh_data()
-        
-        # 실제 DB에 저장된 최종 건수 확인
-        final_rows = db.get_rest_areas()
-        print(f"[*] 최종: DB에 총 {len(final_rows)}개의 휴게소가 로드되었습니다.")
+    if config.WEATHER_API_KEY:
+        print(f"[*] API 키 확인 (Key: {config.WEATHER_API_KEY[:4]}***)")
     else:
-        print("[!] API 키가 없어 더미 데이터를 사용합니다.")
-        seed_or_refresh_data()
+        print("[!] WEATHER_API_KEY 없음 → 더미 데이터로 초기화")
+    _sync(DEFAULT_REQUEST_CODE)
 
 
-def seed_or_refresh_data() -> None:
-    """외부 API 데이터를 가져와 DB에 반영한다."""
+# ── 스케줄러 (3시간 주기 자동 동기화) ───────────────────────────────────────
+
+def _start_scheduler():
     try:
-        rest_areas = api_client.fetch_and_normalize()
-        if rest_areas:
-            db.upsert_rest_areas(rest_areas)
-            print(f"[*] 성공: {len(rest_areas)}개의 휴게소 데이터를 동기화했습니다.")
-            
-            # [디버그] 저장된 데이터 샘플 확인
-            rows = db.get_rest_areas()
-            if rows:
-                print(f"[*] 데이터 샘플: {rows[0]['name']} -> 좌표: {rows[0]['lat']}, {rows[0]['lng']}")
-        else:
-            print("[!] 경고: API로부터 가져온 데이터가 0건입니다. (응답 구조를 확인하세요)")
-    except Exception as exc:
-        app.logger.warning("데이터 동기화에 실패했습니다: %s", exc)
-        print(f"[!] 에러: 데이터 동기화 중 오류 발생: {exc}")
+        from apscheduler.schedulers.background import BackgroundScheduler
+        scheduler = BackgroundScheduler(daemon=True)
+        scheduler.add_job(_sync_all, "interval", hours=3, id="auto_sync")
+        scheduler.start()
+        print("[스케줄러] 3시간 주기 자동 동기화 활성화")
+        return scheduler
+    except ImportError:
+        print("[!] APScheduler 미설치 → 자동 동기화 비활성화")
+        return None
 
+
+# ── 라우트 ───────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", request_codes=REQUEST_CODE_LABELS)
 
 
-@app.route("/api/v1/parking-status")
-def parking_status():
-    rows = db.get_rest_areas()
-    return jsonify(
-        {
-            "count": len(rows),
-            "last_synced_at": db.get_last_sync_time(),
-            "items": rows,
-        }
-    )
+@app.route("/api/v1/weather-index")
+def weather_index():
+    code = request.args.get("requestCode", DEFAULT_REQUEST_CODE)
+    if code not in REQUEST_CODE_LABELS:
+        return jsonify({"error": "유효하지 않은 requestCode"}), 400
+
+    rows = db.get_weather_indices(code)
+    if not rows:
+        _sync(code)
+        rows = db.get_weather_indices(code)
+
+    return jsonify({
+        "request_code": code,
+        "label": REQUEST_CODE_LABELS[code],
+        "count": len(rows),
+        "last_synced_at": db.get_last_sync_time(code),
+        "items": rows,
+    })
 
 
-@app.route("/api/v1/search")
-def search_rest_areas():
-    query = request.args.get("q", "").strip()
-    if not query:
-        return jsonify({"count": 0, "items": []})
-
-    rows = db.search_rest_areas(query)
-    return jsonify(
-        {
-            "count": len(rows),
-            "items": rows,
-        }
-    )
+@app.route("/api/v1/sync")
+def sync():
+    code = request.args.get("requestCode", DEFAULT_REQUEST_CODE)
+    if code not in REQUEST_CODE_LABELS:
+        return jsonify({"error": "유효하지 않은 requestCode"}), 400
+    _sync(code)
+    rows = db.get_weather_indices(code)
+    return jsonify({
+        "request_code": code,
+        "label": REQUEST_CODE_LABELS[code],
+        "count": len(rows),
+        "last_synced_at": db.get_last_sync_time(code),
+        "items": rows,
+    })
 
 
 @app.route("/health")
@@ -94,7 +116,13 @@ def health():
     return jsonify({"status": "ok"})
 
 
+# ── 진입점 ───────────────────────────────────────────────────────────────────
+
 bootstrap()
+
+# Flask 개발 서버 reloader 환경에서 스케줄러 중복 실행 방지
+if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    _start_scheduler()
 
 if __name__ == "__main__":
     app.run(debug=True)

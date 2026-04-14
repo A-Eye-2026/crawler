@@ -3,37 +3,72 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>고속도로 휴게소 실시간 주차 현황</title>
+  <title>생활기상지수 지도</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
 <body>
   <header class="app-header">
-    <div>
-      <h1>고속도로 휴게소 실시간 주차 현황</h1>
-      <p>혼잡도에 따라 마커 색상이 달라집니다. 마커를 클릭하면 상세 정보를 볼 수 있습니다.</p>
+    <div class="header-title">
+      <h1>생활기상지수 지도</h1>
+      <p>대상환경별 체감온도 지수를 지도에 표시합니다.</p>
     </div>
     <div class="header-actions">
-      <input type="text" id="search-input" placeholder="휴게소 이름 또는 노선 검색 (예: 덕평, 경부)" />
+      <label for="code-select">대상환경</label>
+      <select id="code-select">
+        {% for code, label in request_codes.items() %}
+        <option value="{{ code }}">{{ label }}</option>
+        {% endfor %}
+      </select>
       <button id="refresh-button" type="button">새로고침</button>
     </div>
   </header>
+
+  <div class="controls-bar">
+    <!-- 시간대 슬라이더 -->
+    <div class="control-group">
+      <label for="time-slider">예보 시간</label>
+      <div class="slider-wrap">
+        <span class="slider-edge">+1h</span>
+        <input type="range" id="time-slider" min="1" max="78" value="1" step="1" />
+        <span class="slider-edge">+78h</span>
+      </div>
+      <span id="slider-label" class="slider-label">+1시간 후</span>
+    </div>
+
+    <!-- 임계값 -->
+    <div class="control-group">
+      <label for="threshold-input">경고 임계값</label>
+      <div class="threshold-wrap">
+        <input type="number" id="threshold-input" value="35" min="0" max="60" step="0.5" />
+        <span>°C</span>
+      </div>
+    </div>
+
+    <!-- 경고 카운트 -->
+    <div id="warning-badge" class="warning-badge hidden">
+      <span id="warning-count">0</span>개 지점 경고
+    </div>
+  </div>
 
   <main class="layout">
     <section id="map"></section>
     <aside class="sidebar">
       <h2>상세 정보</h2>
       <div id="summary-card" class="summary-card">
-        <p>지도에서 휴게소를 선택해 주세요.</p>
+        <p>지도에서 지점을 선택해 주세요.</p>
       </div>
       <div class="legend">
-        <h3>혼잡도 범례</h3>
+        <h3>체감온도 범례 (°C)</h3>
         <ul>
-          <li><span class="dot green"></span> 여유</li>
-          <li><span class="dot orange"></span> 보통</li>
-          <li><span class="dot red"></span> 혼잡</li>
+          <li><span class="dot blue"></span> 쾌적 (&lt; 25)</li>
+          <li><span class="dot green"></span> 보통 (25 ~ 30)</li>
+          <li><span class="dot orange"></span> 더움 (30 ~ 35)</li>
+          <li><span class="dot red"></span> 매우 더움 (≥ 35)</li>
+          <li><span class="dot gray"></span> 데이터 없음</li>
         </ul>
       </div>
+      <div id="status-bar" class="status-bar"></div>
     </aside>
   </main>
 
